@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aplikasi Budgeting Pribadi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #fce4ec, #e1f5fe);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px;
+    }
+    .container {
+      max-width: 600px;
+      background: #fff;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      margin-top: 20px;
+      width: 100%;
+    }
+    h2, h3 {
+      text-align: center;
+      color: #4a90e2;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    button {
+      background-color: #4a90e2;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #357ABD;
+    }
+    .hidden { display: none; }
+    .logo {
+      display: block;
+      margin: 0 auto 20px auto;
+      width: 150px;
+    }
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    .summary-table th, .summary-table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    @media (max-width: 768px) {
+      .container { max-width: 100%; }
+    }
+    .chart-container {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    canvas { max-width: 100%; margin-top: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="container" id="registerLogin">
+  <img src="logo bebaya.png" alt="Logo" class="logo">
+  <h2>Registrasi / Login</h2>
+  <input type="text" id="username" placeholder="Nama Pengguna">
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="register()">Daftar</button>
+  <button onclick="login()">Login</button>
+</div>
+
+<div class="container hidden" id="step1">
+  <h3>Langkah 1: Saldo & Gaji</h3>
+  <input type="number" id="prevBalance" placeholder="Saldo Bulan Lalu">
+  <input type="number" id="currentSalary" placeholder="Gaji Bulan Ini">
+  <button onclick="nextStep('step1', 'step2')">Berikutnya</button>
+</div>
+
+<div class="container hidden" id="step2">
+  <h3>Langkah 2: Pengeluaran Tetap</h3>
+  <input type="number" id="sewa" placeholder="Sewa/Kontrakan">
+  <input type="number" id="listrik" placeholder="Listrik & Air">
+  <input type="number" id="internet" placeholder="Internet">
+  <input type="number" id="transportasi" placeholder="Transportasi">
+  <input type="number" id="cicilan" placeholder="Cicilan/Kredit">
+  <button onclick="nextStep('step2', 'step3')">Berikutnya</button>
+</div>
+
+<div class="container hidden" id="step3">
+  <h3>Langkah 3: Pengeluaran Variabel</h3>
+  <input type="number" id="makan" placeholder="Makan & Minum">
+  <input type="number" id="belanja" placeholder="Belanja Bulanan">
+  <input type="number" id="hiburan" placeholder="Hiburan">
+  <input type="number" id="tabungan" placeholder="Tabungan/Investasi">
+  <input type="number" id="darurat" placeholder="Dana Darurat">
+  <input type="date" id="tanggal">
+  <button onclick="submitBudget()">Simpan & Tampilkan Ringkasan</button>
+</div>
+
+<div class="container hidden" id="summary">
+  <h3>Ringkasan Budget</h3>
+  <table class="summary-table" id="summaryTable"></table>
+  <div class="chart-container">
+    <canvas id="chart1"></canvas>
+    <canvas id="chart2"></canvas>
+  </div>
+  <button onclick="downloadExcel()">Download Excel</button>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<script>
+let user = null;
+
+function register() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  if (u && p) {
+    if (!localStorage.getItem(u)) {
+      localStorage.setItem(u, JSON.stringify({ password: p, history: [] }));
+      alert('Registrasi berhasil!');
+    } else {
+      alert('Pengguna sudah terdaftar. Silakan login.');
+    }
+  }
+}
+
+function login() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  const data = JSON.parse(localStorage.getItem(u));
+  if (data && data.password === p) {
+    user = u;
+    document.getElementById('registerLogin').classList.add('hidden');
+    document.getElementById('step1').classList.remove('hidden');
+  } else {
+    alert('Nama pengguna atau password salah!');
+  }
+}
+
+function nextStep(current, next) {
+  document.getElementById(current).classList.add('hidden');
+  document.getElementById(next).classList.remove('hidden');
+}
+
+function submitBudget() {
+  const input = id => parseFloat(document.getElementById(id).value) || 0;
+  const tanggalInput = document.getElementById('tanggal').value;
+  if (!tanggalInput) {
+    alert('Mohon masukkan tanggal pengisian.');
+    return;
+  }
+  const tanggalObj = new Date(tanggalInput);
+  const tanggal = tanggalObj.getDate();
+  const bulan = tanggalObj.getMonth() + 1;
+  const tahun = tanggalObj.getFullYear();
+
+  const data = {
+    tanggalLengkap: tanggalInput,
+    tanggal,
+    bulan,
+    tahun,
+    saldoLalu: input('prevBalance'),
+    gaji: input('currentSalary'),
+    sewa: input('sewa'),
+    listrik: input('listrik'),
+    internet: input('internet'),
+    transportasi: input('transportasi'),
+    cicilan: input('cicilan'),
+    makan: input('makan'),
+    belanja: input('belanja'),
+    hiburan: input('hiburan'),
+    tabungan: input('tabungan'),
+    darurat: input('darurat')
+  };
+  data.totalPengeluaran = data.sewa + data.listrik + data.internet + data.transportasi + data.cicilan +
+                          data.makan + data.belanja + data.hiburan + data.tabungan + data.darurat;
+  data.sisa = data.saldoLalu + data.gaji - data.totalPengeluaran;
+
+  const userData = JSON.parse(localStorage.getItem(user));
+  userData.history.push(data);
+  localStorage.setItem(user, JSON.stringify(userData));
+
+  document.getElementById('step3').classList.add('hidden');
+  document.getElementById('summary').classList.remove('hidden');
+  displaySummary(userData.history);
+}
+
+function displaySummary(data) {
+  const table = document.getElementById('summaryTable');
+  table.innerHTML = `
+    <tr><th>Tanggal</th><th>Bulan</th><th>Tahun</th><th>Total Pengeluaran</th><th>Sisa Gaji</th></tr>
+    ${data.map(row => `
+      <tr>
+        <td>${row.tanggal}</td>
+        <td>${row.bulan}</td>
+        <td>${row.tahun}</td>
+        <td>Rp ${row.totalPengeluaran.toLocaleString('id-ID')}</td>
+        <td>Rp ${row.sisa.toLocaleString('id-ID')}</td>
+      </tr>`).join('')}
+  `;
+
+  const labels = data.map(d => d.tanggalLengkap);
+  const expenses = data.map(d => d.totalPengeluaran);
+  const savings = data.map(d => d.sisa);
+
+  new Chart(document.getElementById('chart1'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Total Pengeluaran',
+        data: expenses,
+        backgroundColor: '#ff8a65'
+      }]
+    }
+  });
+
+  new Chart(document.getElementById('chart2'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Sisa Gaji',
+        data: savings,
+        backgroundColor: '#81c784',
+        borderColor: '#388e3c',
+        fill: false
+      }]
+    }
+  });
+}
+
+function downloadExcel() {
+  const userData = JSON.parse(localStorage.getItem(user));
+  const ws = XLSX.utils.json_to_sheet(userData.history);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Budget");
+  XLSX.writeFile(wb, "ringkasan_budget.xlsx");
+}
+
+function logout() {
+  location.reload();
+}
+</script>
+
+</body>
+</html>
